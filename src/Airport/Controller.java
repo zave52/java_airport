@@ -14,8 +14,8 @@ public class Controller {
     // Генератор випадкових чисел для створення різноманітних даних
     private static final Random random = new Random();
 
-    // Мапа, яка зберігає поточний автобус для кожного напрямку
-    private static final Map<String, Bus> currentBusByDestination = new HashMap<>();
+    // Мапа, яка зберігає список автобусів для кожного напрямку
+    private static final Map<String, List<Bus>> currentBusByDestination = new HashMap<>();
     // Синхронізований список всіх автобусів
     private static final List<Bus> allBuses = Collections.synchronizedList(new ArrayList<>());
 
@@ -78,32 +78,65 @@ public class Controller {
 
     /**
      * Розподіляє сім'ю до відповідного автобуса за напрямком.
-     * Якщо автобус для цього напрямку не існує або заповнений, створюється новий.
+     * Спочатку намагається додати сім'ю до існуючих автобусів для цього напрямку.
+     * Якщо жоден автобус не має достатньо місця, створюється новий.
+     * Повністю заповнені автобуси видаляються зі списку доступних.
      *
      * @param family сім'я для розподілу
      */
     public static void distributeFamilyToBus(Family family) {
         String destination = family.travelTo();
 
-        // Отримуємо поточний автобус для цього напрямку
-        Bus currentBus = currentBusByDestination.get(destination);
+        // Отримуємо список автобусів для цього напрямку
+        List<Bus> busesList = currentBusByDestination.get(destination);
 
-        // Якщо автобуса немає, створюємо новий
-        if (currentBus == null) {
-            currentBus = createBus(destination);
+        // Якщо списку немає, створюємо новий з одним автобусом
+        if (busesList == null) {
+            busesList = new ArrayList<>();
+            Bus newBus = createBus(destination);
+            busesList.add(newBus);
+            currentBusByDestination.put(destination, busesList);
         }
 
-        // Спроба додати сім'ю до автобуса
-        if (!currentBus.addFamily(family)) {
-            // Якщо автобус заповнений, створюємо новий і додаємо сім'ю до нього
-            currentBus = createBus(destination);
-            boolean added = currentBus.addFamily(family);
+        // Спроба додати сім'ю до одного з існуючих автобусів
+        boolean added = false;
+
+        // Синхронізуємо доступ до списку автобусів щоб уникнути проблем з одночасним доступом
+        synchronized (busesList) {
+            // Створюємо список для зберігання заповнених автобусів, які потрібно видалити
+            List<Bus> busesToRemove = new ArrayList<>();
+
+            // Перебираємо всі автобуси в пошуку місця для сім'ї
+            for (Bus bus : busesList) {
+                added = bus.addFamily(family);
+
+                if (added) {
+                    // Якщо автобус заповнився після додавання сім'ї, додаємо його до списку на видалення
+                    if (bus.isFull()) {
+                        busesToRemove.add(bus);
+                    }
+                    break;
+                }
+            }
+
+            // Видаляємо всі заповнені автобуси зі списку доступних
+            busesList.removeAll(busesToRemove);
+        }
+
+        // Якщо сім'ю не вдалося додати до жодного автобуса, створюємо новий
+        if (!added) {
+            Bus newBus = new Bus(BUS_CAPACITIES[random.nextInt(BUS_CAPACITIES.length)], destination);
+            allBuses.add(newBus);
+            added = newBus.addFamily(family);
+            busesList.add(newBus);
+
             assert added : "Failed to add family to new bus";
         }
     }
 
     /**
      * Створює новий автобус з випадковою місткістю для вказаного напрямку.
+     * Додає автобус до загального списку, але не додає його до списку автобусів для напрямку.
      *
      * @param destination напрямок руху автобуса
      * @return створений автобус
@@ -112,7 +145,6 @@ public class Controller {
         int randomCapacity = BUS_CAPACITIES[random.nextInt(BUS_CAPACITIES.length)];
         Bus bus = new Bus(randomCapacity, destination);
         allBuses.add(bus);
-        currentBusByDestination.put(destination, bus);
         return bus;
     }
 
