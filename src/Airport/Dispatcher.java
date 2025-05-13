@@ -17,7 +17,7 @@ public class Dispatcher {
      */
     public static void main(String[] args) {
         // Створюємо 5 літаків з пасажирами
-        List<Plane> planes = Controller.createPlanes(5);
+        List<Plane> planes = Controller.createPlanes(100);
 
         // Створюємо та запускаємо окремий потік для кожного літака
         List<Thread> threads = new ArrayList<>();
