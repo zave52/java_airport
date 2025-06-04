@@ -52,13 +52,19 @@ public class Controller {
     public static void distributeFamilyToBus(Family family) {
         String destination = family.travelTo();
 
-        List<Bus> busesList = currentBusByDestination.get(destination);
+        List<Bus> busesList;
+
+        synchronized (currentBusByDestination) {
+            busesList = currentBusByDestination.get(destination);
+        }
 
         if (busesList == null) {
             busesList = new ArrayList<>();
             Bus newBus = createBus(destination);
             busesList.add(newBus);
-            currentBusByDestination.put(destination, busesList);
+            synchronized (currentBusByDestination) {
+                currentBusByDestination.put(destination, busesList);
+            }
         }
 
         boolean added = false;
@@ -67,9 +73,8 @@ public class Controller {
             List<Bus> busesToRemove = new ArrayList<>();
 
             for (Bus bus : busesList) {
-                added = bus.addFamily(family);
-
-                if (added) {
+                if (bus.addFamily(family)) {
+                    added = true;
                     if (bus.isFull()) {
                         busesToRemove.add(bus);
                     }
@@ -77,16 +82,23 @@ public class Controller {
                 }
             }
 
-            busesList.removeAll(busesToRemove);
+            if (!busesToRemove.isEmpty()) {
+                busesList.removeAll(busesToRemove);
+            }
         }
 
         if (!added) {
-            Bus newBus = new Bus(BUS_CAPACITIES[random.nextInt(BUS_CAPACITIES.length)], destination);
-            allBuses.add(newBus);
-            added = newBus.addFamily(family);
-            busesList.add(newBus);
+            Bus newBus = createBus(destination);
+            boolean addedToNewBus = newBus.addFamily(family);
 
-            assert added : "Failed to add family to new bus";
+            if (addedToNewBus) {
+                synchronized (busesList) {
+                    busesList.add(newBus);
+                }
+                added = true;
+            }
+
+            assert added : "Failed to add family to any bus, including a new one. Family: " + family;
         }
     }
 
